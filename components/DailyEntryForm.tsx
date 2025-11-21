@@ -2,13 +2,21 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { ClassData, StudentScore, AttendanceStatus, DailyRecord, SubjectType } from '../types';
 import { SCORING_RUBRIC, getSubjectForDay, TILAWATI_JILID_OPTIONS, TILAWATI_SCORE_OPTIONS, SMART_TEACHER_NOTES, CONSULTATION_OPTIONS } from '../constants';
-import { Save, Calculator, Sparkles, BookOpen, Book, Pencil, HeartHandshake, Stethoscope } from 'lucide-react';
+import { Save, Calculator, Sparkles, BookOpen, Book, Pencil, HeartHandshake, Stethoscope, CheckSquare } from 'lucide-react';
 import { generateDailyReportAnalysis } from '../services/geminiService';
 
 interface Props {
   selectedClass: ClassData;
   onSave: (record: DailyRecord) => void;
 }
+
+const ATTENDANCE_LABELS: Record<AttendanceStatus, string> = {
+    [AttendanceStatus.PRESENT]: 'H (Hadir)',
+    [AttendanceStatus.LATE]: 'TL (Telat)',
+    [AttendanceStatus.SICK]: 'S (Sakit)',
+    [AttendanceStatus.PERMISSION]: 'I (Izin)',
+    [AttendanceStatus.ABSENT]: 'A (Alpha)'
+};
 
 export const DailyEntryForm: React.FC<Props> = ({ selectedClass, onSave }) => {
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
@@ -76,6 +84,13 @@ export const DailyEntryForm: React.FC<Props> = ({ selectedClass, onSave }) => {
     setScores(newScores);
   };
 
+  const markAllPresent = () => {
+    if(confirm("Tandai semua siswa sebagai HADIR?")) {
+        const newScores = scores.map(s => ({ ...s, attendance: AttendanceStatus.PRESENT }));
+        setScores(newScores);
+    }
+  };
+
   const toggleManualEdit = (index: number) => {
     setManualEditModes(prev => ({...prev, [index]: !prev[index]}));
   };
@@ -119,11 +134,21 @@ export const DailyEntryForm: React.FC<Props> = ({ selectedClass, onSave }) => {
   const calculateStats = useCallback(() => {
     const present = scores.filter(s => s.attendance === AttendanceStatus.PRESENT).length;
     const late = scores.filter(s => s.attendance === AttendanceStatus.LATE).length;
+    const sick = scores.filter(s => s.attendance === AttendanceStatus.SICK).length;
+    const permission = scores.filter(s => s.attendance === AttendanceStatus.PERMISSION).length;
+    const absent = scores.filter(s => s.attendance === AttendanceStatus.ABSENT).length;
+
     const avg = (key: keyof StudentScore) => {
         const sum = scores.reduce((acc, curr) => acc + (typeof curr[key] === 'number' ? (curr[key] as number) : 0), 0);
         return (sum / scores.length).toFixed(1);
     }
-    return { present, late, avgInv: avg('activeInvolvement'), avgFlu: avg('fluency'), avgTaj: avg('tajwid'), avgLitScore: avg('literacyScore') };
+    return { 
+        present, late, sick, permission, absent, 
+        avgInv: avg('activeInvolvement'), 
+        avgFlu: avg('fluency'), 
+        avgTaj: avg('tajwid'), 
+        avgLitScore: avg('literacyScore') 
+    };
   }, [scores]);
 
   const handleAnalyzeAI = async () => {
@@ -232,7 +257,18 @@ export const DailyEntryForm: React.FC<Props> = ({ selectedClass, onSave }) => {
               <tr>
                 <th className="p-3 text-left w-10">No</th>
                 <th className="p-3 text-left w-48">Nama Siswa</th>
-                <th className="p-3 text-left w-28">Kehadiran</th>
+                <th className="p-3 text-left w-36">
+                    <div className="flex flex-col gap-1">
+                        <span>Kehadiran</span>
+                        <button 
+                            onClick={markAllPresent} 
+                            className="flex items-center gap-1 text-[10px] bg-green-100 text-green-700 px-2 py-1 rounded hover:bg-green-200 w-fit transition-colors font-medium border border-green-200"
+                            title="Tandai semua siswa sebagai Hadir"
+                        >
+                            <CheckSquare size={10} /> Set Semua Hadir
+                        </button>
+                    </div>
+                </th>
                 
                 {/* Subject Specific Headers */}
                 {isTilawati && (
@@ -290,9 +326,19 @@ export const DailyEntryForm: React.FC<Props> = ({ selectedClass, onSave }) => {
                     <select 
                       value={s.attendance} 
                       onChange={(e) => updateScore(idx, 'attendance', e.target.value)}
-                      className={`w-full p-1.5 rounded border text-xs ${s.attendance === AttendanceStatus.LATE ? 'text-orange-600 border-orange-300 bg-orange-50' : ''}`}
+                      className={`w-full p-1.5 rounded border text-xs font-medium cursor-pointer ${
+                          s.attendance === AttendanceStatus.LATE ? 'text-orange-700 bg-orange-50 border-orange-200' :
+                          s.attendance === AttendanceStatus.ABSENT ? 'text-red-700 bg-red-50 border-red-200' :
+                          s.attendance === AttendanceStatus.SICK ? 'text-blue-700 bg-blue-50 border-blue-200' :
+                          s.attendance === AttendanceStatus.PERMISSION ? 'text-purple-700 bg-purple-50 border-purple-200' :
+                          'text-slate-700 border-slate-200'
+                      }`}
                     >
-                      {Object.values(AttendanceStatus).map(st => <option key={st} value={st}>{st}</option>)}
+                      {Object.values(AttendanceStatus).map(st => (
+                          <option key={st} value={st}>
+                            {ATTENDANCE_LABELS[st]}
+                          </option>
+                      ))}
                     </select>
                   </td>
 
@@ -486,36 +532,51 @@ export const DailyEntryForm: React.FC<Props> = ({ selectedClass, onSave }) => {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
             <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
-                <Calculator size={20} /> Rekapitulasi Sementara
+                <Calculator size={20} /> Rekapitulasi Absensi & Nilai
             </h3>
             <div className="space-y-3 text-sm">
-                <div className="flex justify-between border-b border-slate-100 pb-2">
-                    <span>Hadir</span>
-                    <span className="font-bold text-green-600">{stats.present} Siswa</span>
-                </div>
-                <div className="flex justify-between border-b border-slate-100 pb-2">
-                    <span>Terlambat</span>
-                    <span className="font-bold text-orange-600">{stats.late} Siswa</span>
+                <div className="grid grid-cols-2 gap-4 mb-4 bg-slate-50 p-3 rounded-lg border border-slate-100">
+                    <div className="flex justify-between border-b border-slate-200 pb-1">
+                        <span>Hadir</span>
+                        <span className="font-bold text-green-600">{stats.present}</span>
+                    </div>
+                    <div className="flex justify-between border-b border-slate-200 pb-1">
+                        <span>Terlambat</span>
+                        <span className="font-bold text-orange-600">{stats.late}</span>
+                    </div>
+                    <div className="flex justify-between border-b border-slate-200 pb-1">
+                        <span>Sakit</span>
+                        <span className="font-bold text-blue-600">{stats.sick}</span>
+                    </div>
+                    <div className="flex justify-between border-b border-slate-200 pb-1">
+                        <span>Izin</span>
+                        <span className="font-bold text-purple-600">{stats.permission}</span>
+                    </div>
+                    <div className="flex justify-between">
+                        <span>Alpha</span>
+                        <span className="font-bold text-red-600">{stats.absent}</span>
+                    </div>
                 </div>
                 
+                <h4 className="font-semibold text-slate-700 mt-2">Rata-rata Kelas</h4>
                 {isLiterasi ? (
                    <div className="flex justify-between border-b border-slate-100 pb-2">
-                      <span>Rata-rata Nilai Kelas</span>
+                      <span>Nilai Literasi</span>
                       <span className="font-bold text-indigo-600">{stats.avgLitScore}</span>
                    </div>
                 ) : isKonsultasi ? (
                    <div className="flex justify-between border-b border-slate-100 pb-2">
-                      <span>Kesehatan Rata-rata</span>
+                      <span>Kesehatan Fisik</span>
                       <span className="font-bold text-pink-600">{stats.avgTaj} (Skala 4)</span>
                    </div>
                 ) : (
                    <>
                     <div className="flex justify-between border-b border-slate-100 pb-2">
-                        <span>Rata-rata {isTilawati ? 'Fashohah' : 'Keterlibatan'}</span>
+                        <span>{isTilawati ? 'Fashohah' : 'Keterlibatan'}</span>
                         <span className="font-bold">{isTilawati ? stats.avgFlu : stats.avgInv}</span>
                     </div>
                     <div className="flex justify-between border-b border-slate-100 pb-2">
-                        <span>Rata-rata Tajwid</span>
+                        <span>Tajwid</span>
                         <span className="font-bold">{stats.avgTaj}</span>
                     </div>
                    </>
