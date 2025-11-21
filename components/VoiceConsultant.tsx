@@ -1,3 +1,4 @@
+
 import React, { useEffect, useRef, useState } from 'react';
 import { GoogleGenAI, LiveServerMessage, Modality } from '@google/genai';
 import { Mic, MicOff, Volume2, X } from 'lucide-react';
@@ -54,7 +55,7 @@ export const VoiceConsultant: React.FC<{ onClose: () => void }> = ({ onClose }) 
                 },
                 onmessage: async (message: LiveServerMessage) => {
                     // Handle Audio Output
-                    const base64Audio = message.serverContent?.modelTurn?.parts[0]?.inlineData?.data;
+                    const base64Audio = message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
                     if (base64Audio) {
                         const audioBuffer = await decodeAudioData(decode(base64Audio), outputAudioContext, 24000, 1);
                         const source = outputAudioContext.createBufferSource();
@@ -63,8 +64,9 @@ export const VoiceConsultant: React.FC<{ onClose: () => void }> = ({ onClose }) 
                         source.start();
                     }
                     // Handle Transcription if available (simplified for demo)
-                    if(message.serverContent?.modelTurn?.parts[0]?.text) {
-                         setTranscription(message.serverContent.modelTurn.parts[0].text);
+                    const text = message.serverContent?.modelTurn?.parts?.[0]?.text;
+                    if(text) {
+                         setTranscription(text);
                     }
                 },
                 onclose: () => setIsConnected(false),

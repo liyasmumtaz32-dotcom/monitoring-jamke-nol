@@ -49,7 +49,7 @@ export const Dashboard: React.FC<Props> = ({ records }) => {
       setSummaryResult('');
 
       const today = new Date();
-      let filteredRecords = [];
+      let filteredRecords: DailyRecord[] = [];
 
       if (type === 'Harian') {
           // Get today's record or the latest one if today is empty
