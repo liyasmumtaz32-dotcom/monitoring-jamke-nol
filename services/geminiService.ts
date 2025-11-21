@@ -1,8 +1,6 @@
 import { GoogleGenAI, Type, FunctionDeclaration, Tool } from "@google/genai";
 import { DailyRecord, StudentScore } from "../types";
 
-// NOTE: The API Key must be provided via process.env.API_KEY or similar mechanism in a real app.
-// For this demo, we assume the environment is set up correctly.
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 export const generateDailyReportAnalysis = async (record: DailyRecord) => {

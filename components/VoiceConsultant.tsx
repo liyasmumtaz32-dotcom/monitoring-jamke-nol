@@ -2,8 +2,6 @@ import React, { useEffect, useRef, useState } from 'react';
 import { GoogleGenAI, LiveServerMessage, Modality } from '@google/genai';
 import { Mic, MicOff, Volume2, X } from 'lucide-react';
 
-const API_KEY = process.env.API_KEY || '';
-
 export const VoiceConsultant: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const [isConnected, setIsConnected] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
@@ -24,7 +22,7 @@ export const VoiceConsultant: React.FC<{ onClose: () => void }> = ({ onClose }) 
 
   const connectToGemini = async () => {
     try {
-        const ai = new GoogleGenAI({ apiKey: API_KEY });
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
         const inputAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
         const outputAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
         audioContextRef.current = outputAudioContext;
