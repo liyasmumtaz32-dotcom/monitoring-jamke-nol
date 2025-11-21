@@ -1,0 +1,7 @@
+{
+  "name": "Monit0r - Jam Ke-0 Tracker",
+  "description": "A comprehensive monitoring application for 'Jam ke-0' activities (Tilawati, Literacy, Worship, Consultation). Features class attendance, scoring rubrics based on school instruments, AI-powered analysis for teacher recommendations, and reporting tools.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}

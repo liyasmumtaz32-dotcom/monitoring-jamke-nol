@@ -1,0 +1,31 @@
+{
+  "name": "monit0r-jam-ke-0",
+  "version": "1.0.0",
+  "description": "Aplikasi monitoring jam ke-0 dengan analisis AI",
+  "main": "index.tsx",
+  "scripts": {
+    "start": "react-scripts start",
+    "build": "react-scripts build",
+    "test": "react-scripts test"
+  },
+  "dependencies": {
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "@google/genai": "^1.30.0",
+    "recharts": "^3.4.1",
+    "lucide-react": "^0.554.0",
+    "idb": "^8.0.0"
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  }
+}
