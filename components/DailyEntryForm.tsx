@@ -54,10 +54,13 @@ export const DailyEntryForm: React.FC<Props> = ({ selectedClass, onSave }) => {
       literacyScore: 0,
       notes: ''
     })));
-    setTeacherAnalysis('');
-    setRecSpecial('');
-    setRecMethod('');
-    setRecPlan('');
+    
+    // Set Default Standard Descriptions for All Classes
+    setTeacherAnalysis('Jam ke-0 berjalan cukup efektif dengan tingkat kehadiran siswa > 90% pada mayoritas kelas. Setiap bulan untuk penyegaran makharijul huruf dan metode pembetulan bacaan.');
+    setRecSpecial('Tidak Ada');
+    setRecMethod('Kelas relatif tertib di awal pembelajaran.');
+    setRecPlan(''); // Left empty for specific plans if needed
+    
     setAiAnalysis('');
     setManualEditModes({});
   }, [selectedClass]);

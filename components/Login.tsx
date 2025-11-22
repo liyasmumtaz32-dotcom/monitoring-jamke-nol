@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { MOCK_CLASSES } from '../constants';
 import { ClassData } from '../types';
-import { LogIn, School, UserPlus, ArrowLeft, Save } from 'lucide-react';
+import { LogIn, School, UserPlus, ArrowLeft, Save, ShieldCheck, Lock } from 'lucide-react';
 
 interface Props {
   onLogin: (classData: ClassData) => void;
@@ -11,7 +11,10 @@ interface Props {
 export const Login: React.FC<Props> = ({ onLogin }) => {
   const [selectedClassId, setSelectedClassId] = useState('');
   const [customClasses, setCustomClasses] = useState<ClassData[]>([]);
-  const [isManualMode, setIsManualMode] = useState(false);
+  const [viewMode, setViewMode] = useState<'LOGIN' | 'MANUAL' | 'ADMIN'>('LOGIN');
+  
+  // Admin State
+  const [adminPassword, setAdminPassword] = useState('');
 
   // Form State for Manual Mode
   const [manualTeacher, setManualTeacher] = useState('');
@@ -39,6 +42,22 @@ export const Login: React.FC<Props> = ({ onLogin }) => {
       onLogin(selectedClass);
     } else {
       alert("Silakan pilih nama wali kelas terlebih dahulu.");
+    }
+  };
+
+  const handleAdminLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (adminPassword === 'admin123') {
+        // Create a special "Admin" class object
+        const adminUser: ClassData = {
+            id: 'ADMIN',
+            name: 'SEMUA KELAS',
+            homeroomTeacher: 'Administrator',
+            students: []
+        };
+        onLogin(adminUser);
+    } else {
+        alert("Password Admin Salah!");
     }
   };
 
@@ -93,7 +112,7 @@ export const Login: React.FC<Props> = ({ onLogin }) => {
         </div>
         
         <div className="p-8">
-          {!isManualMode ? (
+          {viewMode === 'LOGIN' && (
             // MODE LOGIN BIASA
             <form onSubmit={handleLogin} className="space-y-6">
                 <div>
@@ -126,22 +145,32 @@ export const Login: React.FC<Props> = ({ onLogin }) => {
                 <LogIn size={20} /> Masuk Aplikasi
                 </button>
 
-                <div className="pt-4 border-t border-slate-100 text-center">
-                    <p className="text-sm text-slate-500 mb-2">Nama tidak ada di daftar?</p>
+                <div className="pt-4 border-t border-slate-100 grid grid-cols-2 gap-4 text-center">
                     <button 
                         type="button"
-                        onClick={() => setIsManualMode(true)}
-                        className="text-indigo-600 font-medium text-sm hover:underline flex items-center justify-center gap-1 w-full"
+                        onClick={() => setViewMode('MANUAL')}
+                        className="text-slate-500 hover:text-indigo-600 font-medium text-xs flex flex-col items-center gap-1 transition-colors"
                     >
-                        <UserPlus size={16} /> Input Data Baru (Manual)
+                        <UserPlus size={18} /> 
+                        <span>Input Baru</span>
+                    </button>
+                    <button 
+                        type="button"
+                        onClick={() => setViewMode('ADMIN')}
+                        className="text-slate-500 hover:text-indigo-600 font-medium text-xs flex flex-col items-center gap-1 transition-colors"
+                    >
+                        <ShieldCheck size={18} /> 
+                        <span>Login Admin</span>
                     </button>
                 </div>
             </form>
-          ) : (
+          )}
+
+          {viewMode === 'MANUAL' && (
             // MODE INPUT MANUAL
             <form onSubmit={handleManualSubmit} className="space-y-4">
                  <div className="flex items-center gap-2 text-indigo-800 font-bold border-b pb-2 mb-4">
-                    <button type="button" onClick={() => setIsManualMode(false)} className="hover:bg-indigo-50 p-1 rounded">
+                    <button type="button" onClick={() => setViewMode('LOGIN')} className="hover:bg-indigo-50 p-1 rounded">
                         <ArrowLeft size={20} />
                     </button>
                     <h3>Input Data Guru Baru</h3>
@@ -182,7 +211,6 @@ export const Login: React.FC<Props> = ({ onLogin }) => {
                         placeholder="Ahmad Dhani&#10;Budi Doremi&#10;Citra Kirana"
                         required
                     ></textarea>
-                    <p className="text-[10px] text-slate-500 mt-1">*Data akan tersimpan otomatis di browser ini.</p>
                  </div>
 
                  <button
@@ -190,6 +218,44 @@ export const Login: React.FC<Props> = ({ onLogin }) => {
                     className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-xl transition-colors flex items-center justify-center gap-2 mt-4"
                 >
                     <Save size={20} /> Simpan & Masuk
+                </button>
+            </form>
+          )}
+
+          {viewMode === 'ADMIN' && (
+            // MODE ADMIN LOGIN
+            <form onSubmit={handleAdminLogin} className="space-y-6">
+                 <div className="flex items-center gap-2 text-red-800 font-bold border-b border-red-100 pb-2 mb-4">
+                    <button type="button" onClick={() => setViewMode('LOGIN')} className="hover:bg-red-50 p-1 rounded text-red-600">
+                        <ArrowLeft size={20} />
+                    </button>
+                    <h3>Akses Administrator</h3>
+                 </div>
+
+                 <div className="bg-red-50 p-3 rounded-lg text-xs text-red-700 mb-4">
+                    Halaman ini khusus untuk Kepala Sekolah / Kurikulum untuk melakukan ekspor data massal.
+                 </div>
+
+                 <div>
+                    <label className="block text-xs font-bold text-slate-600 uppercase mb-1">Password Admin</label>
+                    <div className="relative">
+                        <input 
+                            type="password"
+                            value={adminPassword}
+                            onChange={e => setAdminPassword(e.target.value)}
+                            className="w-full p-3 pl-10 border rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 text-sm outline-none"
+                            placeholder="Masukkan Password..."
+                            autoFocus
+                        />
+                        <Lock className="absolute left-3 top-3 text-slate-400" size={18}/>
+                    </div>
+                 </div>
+
+                 <button
+                    type="submit"
+                    className="w-full bg-slate-800 hover:bg-black text-white font-bold py-3 px-4 rounded-xl transition-colors flex items-center justify-center gap-2 mt-4 shadow-lg"
+                >
+                    <ShieldCheck size={20} /> Masuk Dashboard Admin
                 </button>
             </form>
           )}

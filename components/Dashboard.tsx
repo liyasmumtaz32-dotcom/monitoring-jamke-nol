@@ -1,45 +1,108 @@
-
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { DailyRecord, SubjectType, StudentScore } from '../types';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { FileText, MessageSquare, Calendar, TrendingUp, BookOpen, CheckCircle, Download } from 'lucide-react';
+import { FileText, MessageSquare, Calendar, TrendingUp, BookOpen, CheckCircle, Download, Users, ShieldCheck, ListFilter, ArrowLeft, Eye } from 'lucide-react';
 import { generateComprehensiveReport, generateEvaluationSummary } from '../services/geminiService';
-import { CONSULTATION_OPTIONS } from '../constants';
+import { CONSULTATION_OPTIONS, MOCK_CLASSES } from '../constants';
+import { generateReportHTML, downloadDoc } from '../services/exportUtils';
 
 interface Props {
   records: DailyRecord[];
+  allRecords: DailyRecord[];
+  isAdmin?: boolean;
 }
 
-export const Dashboard: React.FC<Props> = ({ records }) => {
+export const Dashboard: React.FC<Props> = ({ records, allRecords, isAdmin = false }) => {
   const [chatQuery, setChatQuery] = useState('');
   const [aiResponse, setAiResponse] = useState('');
   const [isThinking, setIsThinking] = useState(false);
+  
+  // Admin Specific State
+  const [selectedClass, setSelectedClass] = useState<string | null>(null);
 
   // Summary State
   const [summaryType, setSummaryType] = useState<'Harian' | 'Triwulan' | 'Bulanan'>('Harian');
   const [summaryResult, setSummaryResult] = useState('');
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
 
-  const chartData = records.map(r => {
-    // Normalize score to percentage or 1-4 scale for chart visualization
+  // Export Loading State
+  const [isExporting, setIsExporting] = useState(false);
+
+  // --- ADMIN SPECIFIC: Class Summary Calculation ---
+  const classSummary = useMemo(() => {
+    if (!isAdmin) return [];
+    
+    const todayStr = new Date().toISOString().split('T')[0];
+    const summaryMap = new Map<string, {count: number, lastDate: string, teacher: string, submittedToday: boolean}>();
+
+    // 1. Initialize with MOCK_CLASSES to show ALL classes (even empty ones)
+    MOCK_CLASSES.forEach(c => {
+        summaryMap.set(c.name, {
+            count: 0, 
+            lastDate: '-', 
+            teacher: c.homeroomTeacher,
+            submittedToday: false
+        });
+    });
+
+    // 2. Process All Records to fill/overwrite data
+    allRecords.forEach(r => {
+        const current = summaryMap.get(r.classId) || { 
+            count: 0, 
+            lastDate: '-', 
+            teacher: r.teacherName,
+            submittedToday: false
+        };
+
+        current.count += 1;
+        if (current.lastDate === '-' || new Date(r.date) > new Date(current.lastDate)) {
+             current.lastDate = r.date;
+        }
+        if (r.date === todayStr) {
+            current.submittedToday = true;
+        }
+        // Update teacher name just in case
+        current.teacher = r.teacherName;
+
+        summaryMap.set(r.classId, current);
+    });
+
+    return Array.from(summaryMap.entries())
+        .map(([name, data]) => ({ name, ...data }))
+        .sort((a, b) => a.name.localeCompare(b.name, undefined, {numeric: true}));
+  }, [allRecords, isAdmin]);
+
+  // --- Determine Displayed Records (Global vs Detail) ---
+  const displayedRecords = useMemo(() => {
+      if (isAdmin && selectedClass) {
+          return allRecords.filter(r => r.classId === selectedClass);
+      }
+      return records; // For normal user or Admin Global View
+  }, [isAdmin, selectedClass, allRecords, records]);
+
+  // Prepare Chart Data
+  const chartData = displayedRecords.map(r => {
     let scoreVal = 0;
     if (r.subject === SubjectType.LITERASI) {
         const avgLit = r.studentScores.reduce((acc, curr) => acc + (curr.literacyScore || 0), 0) / r.studentScores.length;
-        scoreVal = avgLit / 25; // Convert 100 scale to roughly 4 scale for chart consistency
+        scoreVal = avgLit / 25; 
     } else {
         scoreVal = r.studentScores.reduce((acc, curr) => acc + curr.activeInvolvement, 0) / r.studentScores.length;
     }
 
     return {
         date: r.date,
+        label: (isAdmin && !selectedClass) ? `${r.date} (${r.classId})` : r.date,
         kehadiran: r.studentScores.filter(s => s.attendance === 'H').length,
         rataRata: scoreVal.toFixed(2)
     };
   });
+  
+  const displayChartData = (isAdmin && !selectedClass) ? chartData.slice(0, 50) : chartData;
 
   const handleComprehensiveAsk = async () => {
     setIsThinking(true);
-    const res = await generateComprehensiveReport(records, chatQuery);
+    const res = await generateComprehensiveReport(displayedRecords, chatQuery);
     setAiResponse(res || "");
     setIsThinking(false);
   };
@@ -53,19 +116,16 @@ export const Dashboard: React.FC<Props> = ({ records }) => {
       let filteredRecords: DailyRecord[] = [];
 
       if (type === 'Harian') {
-          // Get today's record or the latest one if today is empty
           const todayStr = today.toISOString().split('T')[0];
-          filteredRecords = records.filter(r => r.date === todayStr);
-          if (filteredRecords.length === 0 && records.length > 0) {
-              filteredRecords = [records[0]]; // Fallback to latest
+          filteredRecords = displayedRecords.filter(r => r.date === todayStr);
+          if (filteredRecords.length === 0 && displayedRecords.length > 0) {
+              filteredRecords = [displayedRecords[0]]; 
           }
       } else if (type === 'Triwulan') {
-          // Last 90 days
           const last90Days = new Date(today.getTime() - 90 * 24 * 60 * 60 * 1000);
-          filteredRecords = records.filter(r => new Date(r.date) >= last90Days);
+          filteredRecords = displayedRecords.filter(r => new Date(r.date) >= last90Days);
       } else if (type === 'Bulanan') {
-          // Current Month
-          filteredRecords = records.filter(r => {
+          filteredRecords = displayedRecords.filter(r => {
               const d = new Date(r.date);
               return d.getMonth() === today.getMonth() && d.getFullYear() === today.getFullYear();
           });
@@ -76,283 +136,156 @@ export const Dashboard: React.FC<Props> = ({ records }) => {
       setIsGeneratingSummary(false);
   };
 
-  // Helper for visual report export (rough translation back to text)
-  const convertScoreToText = (val: number) => {
-      if (val === 4) return "Sangat Baik";
-      if (val === 3) return "Baik";
-      if (val === 2) return "Cukup";
-      return "Kurang";
-  };
-
-  // Helper to get label from Consultation Options
-  const getConsultationLabel = (key: 'kerapian' | 'atribut' | 'kesehatan' | 'respon', val: number) => {
-      const option = CONSULTATION_OPTIONS[key].find(o => o.value === val);
-      return option ? option.label : val.toString();
-  };
-
-  const exportAllReportsToWord = () => {
-    if (records.length === 0) {
+  const exportCurrentClassReports = () => {
+    if (displayedRecords.length === 0) {
         alert("Tidak ada data laporan untuk diekspor.");
         return;
     }
+    const title = selectedClass ? `Laporan Kelas ${selectedClass}` : `Laporan Kelas`;
+    const html = generateReportHTML(displayedRecords, title);
+    downloadDoc(html, `Rekap_${selectedClass || 'Kelas'}_${new Date().toISOString().split('T')[0]}.doc`);
+  };
 
-    const content = records.map(record => {
-        const isTilawati = record.subject === SubjectType.TILAWATI;
-        const isLiterasi = record.subject === SubjectType.LITERASI;
-        const isKonsultasi = record.subject === SubjectType.KONSULTASI;
-        
-        let tableHeaders = '';
-        let tableBody: (s: StudentScore) => string;
-
-        if (isTilawati) {
-            tableHeaders = `
-                <th style="background-color:#e0e0e0">Jilid</th><th style="background-color:#e0e0e0">Halaman</th>
-                <th style="background-color:#e0e0e0">Fashohah</th><th style="background-color:#e0e0e0">Tajwid</th><th style="background-color:#e0e0e0">Adab</th>
-            `;
-            tableBody = (s: StudentScore) => `
-                <td align="center">${s.jilid || '-'}</td><td align="center">${s.page || '-'}</td>
-                <td align="center">${convertScoreToText(s.fluency)}</td>
-                <td align="center">${convertScoreToText(s.tajwid)}</td>
-                <td align="center">${convertScoreToText(s.adab)}</td>
-            `;
-        } else if (isLiterasi) {
-            tableHeaders = `
-                <th style="background-color:#e0e0e0">Jml Soal</th><th style="background-color:#e0e0e0">Benar</th><th style="background-color:#e0e0e0">Salah</th><th style="background-color:#e0e0e0">Nilai</th>
-            `;
-            tableBody = (s: StudentScore) => `
-                <td align="center">${s.literacyTotalQuestions || 0}</td>
-                <td align="center">${s.literacyCorrect || 0}</td>
-                <td align="center">${s.literacyWrong || 0}</td>
-                <td align="center"><strong>${s.literacyScore || 0}</strong></td>
-            `;
-        } else if (isKonsultasi) {
-            tableHeaders = `
-                <th style="background-color:#e0e0e0">Kerapian</th><th style="background-color:#e0e0e0">Atribut</th><th style="background-color:#e0e0e0">Kesehatan</th><th style="background-color:#e0e0e0">Respon</th>
-            `;
-            tableBody = (s: StudentScore) => `
-                <td align="center">${getConsultationLabel('kerapian', s.activeInvolvement)}</td>
-                <td align="center">${getConsultationLabel('atribut', s.fluency)}</td>
-                <td align="center">${getConsultationLabel('kesehatan', s.tajwid)}</td>
-                <td align="center">${getConsultationLabel('respon', s.adab)}</td>
-            `;
-        } else {
-            // General
-            tableHeaders = `
-                <th style="background-color:#e0e0e0">Aktif</th><th style="background-color:#e0e0e0">Lancar</th><th style="background-color:#e0e0e0">Tajwid</th><th style="background-color:#e0e0e0">Adab</th>
-            `;
-            tableBody = (s: StudentScore) => `
-                <td align="center">${s.activeInvolvement}</td>
-                <td align="center">${s.fluency}</td>
-                <td align="center">${s.tajwid}</td>
-                <td align="center">${s.adab}</td>
-            `;
-        }
-
-        return `
-            <div class="report-section">
-                <h2 style="margin-bottom: 5px; font-size: 16px;">Laporan Monitoring Jam Ke-0</h2>
-                <table style="width: 100%; border: none; margin-bottom: 10px;">
-                    <tr>
-                        <td style="border: none; width: 50%;"><strong>Mapel:</strong> ${record.subject}</td>
-                        <td style="border: none; width: 50%;"><strong>Kelas:</strong> ${record.classId}</td>
-                    </tr>
-                    <tr>
-                        <td style="border: none;"><strong>Tanggal:</strong> ${record.date}</td>
-                        <td style="border: none;"><strong>Guru:</strong> ${record.teacherName}</td>
-                    </tr>
-                </table>
-                
-                <table border="1" style="border-collapse: collapse; width: 100%; font-family: Arial, sans-serif; font-size: 11px;">
-                   <thead>
-                     <tr style="background-color: #f0f0f0; text-align: center;">
-                        <th style="padding: 5px;">No</th>
-                        <th style="padding: 5px;">Nama</th>
-                        <th style="padding: 5px;">Hadir</th>
-                        ${tableHeaders}
-                        <th style="padding: 5px;">Catatan</th>
-                     </tr>
-                   </thead>
-                   <tbody>
-                     ${record.studentScores.map((s, idx) => `
-                        <tr>
-                            <td style="text-align: center;">${idx + 1}</td>
-                            <td>${s.studentName}</td>
-                            <td style="text-align: center;">${s.attendance}</td>
-                            ${tableBody(s)}
-                            <td>${s.notes}</td>
-                        </tr>
-                     `).join('')}
-                   </tbody>
-                </table>
-                <br/>
-                <div style="border: 1px solid #ccc; padding: 10px; background-color: #f9f9f9; font-size: 11px;">
-                    <p style="margin: 5px 0;"><strong>Analisis Guru:</strong> ${record.teacherAnalysis || '-'}</p>
-                    <p style="margin: 5px 0;"><strong>Siswa Perlu Pendampingan:</strong> ${record.recommendations.specialAttention || '-'}</p>
-                    <p style="margin: 5px 0;"><strong>Rencana Tindak Lanjut:</strong> ${record.recommendations.nextWeekPlan || '-'}</p>
-                </div>
-            </div>
-            <br style="page-break-before: always"/>
-        `;
-    }).join('');
-
-    const htmlContent = `
-      <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word'>
-      <head>
-        <meta charset='utf-8'>
-        <title>Rekapitulasi Laporan Jam Ke-0</title>
-        <style>
-            body { font-family: 'Calibri', 'Arial', sans-serif; font-size: 11pt; }
-            table { width: 100%; border-collapse: collapse; }
-            th, td { border: 1px solid black; padding: 4px; font-size: 11px; }
-            h2 { font-size: 16px; color: #333; }
-        </style>
-      </head>
-      <body>
-        ${content}
-        <p style="text-align: center; color: #888; font-size: 10px;">Generated by Monit0r System</p>
-      </body></html>
-    `;
+  const exportMassReports = async () => {
+    if (allRecords.length === 0) {
+        alert("Database kosong, belum ada laporan dari kelas manapun.");
+        return;
+    }
     
-    const url = 'data:application/vnd.ms-word;charset=utf-8,' + encodeURIComponent(htmlContent);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `Rekap_Semua_Laporan_${new Date().toISOString().split('T')[0]}.doc`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    setIsExporting(true);
+
+    // Add small delay to allow UI to show loading state before heavy processing
+    setTimeout(() => {
+        try {
+            const sortedRecords = [...allRecords].sort((a, b) => {
+                const classComparison = a.classId.localeCompare(b.classId, undefined, {numeric: true});
+                if (classComparison !== 0) return classComparison;
+                return new Date(b.date).getTime() - new Date(a.date).getTime();
+            });
+
+            const html = generateReportHTML(sortedRecords, "Laporan Monitoring Massal (Semua Kelas)");
+            downloadDoc(html, `Laporan_Massal_Semua_Kelas_${new Date().toISOString().split('T')[0]}.doc`);
+        } catch (e) {
+            console.error(e);
+            alert("Gagal melakukan ekspor massal.");
+        } finally {
+            setIsExporting(false);
+        }
+    }, 100);
   };
 
   const copyReportToClipboard = (record: DailyRecord) => {
-    const isTilawati = record.subject === SubjectType.TILAWATI;
-    const isLiterasi = record.subject === SubjectType.LITERASI;
-    const isKonsultasi = record.subject === SubjectType.KONSULTASI;
-    
-    let tableHeaders = '';
-    let tableBody: (s: StudentScore) => string;
-
-    if (isTilawati) {
-        tableHeaders = `
-            <th>Jilid</th><th>Halaman</th>
-            <th>Fashohah</th><th>Tajwid</th><th>Adab</th>
-        `;
-        tableBody = (s: StudentScore) => `
-            <td>${s.jilid || '-'}</td><td>${s.page || '-'}</td>
-            <td>${convertScoreToText(s.fluency)}</td>
-            <td>${convertScoreToText(s.tajwid)}</td>
-            <td>${convertScoreToText(s.adab)}</td>
-        `;
-    } else if (isLiterasi) {
-        tableHeaders = `
-            <th>Jml Soal</th><th>Benar</th><th>Salah</th><th>Nilai</th>
-        `;
-        tableBody = (s: StudentScore) => `
-            <td>${s.literacyTotalQuestions || 0}</td>
-            <td>${s.literacyCorrect || 0}</td>
-            <td>${s.literacyWrong || 0}</td>
-            <td><strong>${s.literacyScore || 0}</strong></td>
-        `;
-    } else if (isKonsultasi) {
-        tableHeaders = `
-            <th>Kerapian</th><th>Atribut</th><th>Kesehatan</th><th>Respon</th>
-        `;
-        tableBody = (s: StudentScore) => `
-            <td>${getConsultationLabel('kerapian', s.activeInvolvement)}</td>
-            <td>${getConsultationLabel('atribut', s.fluency)}</td>
-            <td>${getConsultationLabel('kesehatan', s.tajwid)}</td>
-            <td>${getConsultationLabel('respon', s.adab)}</td>
-        `;
-    } else {
-        tableHeaders = `
-            <th>Aktif</th><th>Lancar</th><th>Tajwid</th><th>Adab</th>
-        `;
-        tableBody = (s: StudentScore) => `
-            <td>${s.activeInvolvement}</td>
-            <td>${s.fluency}</td>
-            <td>${s.tajwid}</td>
-            <td>${s.adab}</td>
-        `;
-    }
-    
-    const htmlContent = `
-      <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word'>
-      <head><meta charset='utf-8'><title>Laporan ${record.date}</title></head>
-      <body>
-        <h1>Laporan Monitoring Jam Ke-0 (${record.subject})</h1>
-        <p><strong>Kelas:</strong> ${record.classId}</p>
-        <p><strong>Tanggal:</strong> ${record.date}</p>
-        <p><strong>Guru:</strong> ${record.teacherName}</p>
-        <br/>
-        <table border="1" style="border-collapse: collapse; width: 100%;">
-           <thead style="background-color: #f0f0f0;">
-             <tr>
-                <th>Nama</th>
-                <th>Hadir</th>
-                ${tableHeaders}
-                <th>Catatan</th>
-             </tr>
-           </thead>
-           <tbody>
-             ${record.studentScores.map(s => `
-                <tr>
-                    <td>${s.studentName}</td>
-                    <td>${s.attendance}</td>
-                    ${tableBody(s)}
-                    <td>${s.notes}</td>
-                </tr>
-             `).join('')}
-           </tbody>
-        </table>
-        <br/>
-        <h3>Analisis & Evaluasi</h3>
-        <p><strong>Analisis Guru:</strong> ${record.teacherAnalysis}</p>
-        <p><strong>Siswa Perlu Pendampingan:</strong> ${record.recommendations.specialAttention}</p>
-        <p><strong>Evaluasi Metode:</strong> ${record.recommendations.methodImprovement}</p>
-        <p><strong>Rencana Minggu Depan:</strong> ${record.recommendations.nextWeekPlan}</p>
-        <hr/>
-        <p><em>Generated by Monit0r AI</em></p>
-      </body></html>
-    `;
-    
-    const blob = new Blob(['\ufeff', htmlContent], {
-        type: 'application/msword'
-    });
-    
-    const url = 'data:application/vnd.ms-word;charset=utf-8,' + encodeURIComponent(htmlContent);
-    
-    // Create download link
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `Laporan_${record.classId}_${record.date}.doc`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    const html = generateReportHTML([record], `Laporan ${record.classId}`);
+    downloadDoc(html, `Laporan_${record.classId}_${record.date}.doc`);
   };
 
   return (
     <div className="space-y-8">
+      {/* ADMIN: Navigation Header */}
+      {isAdmin && selectedClass && (
+          <div className="flex items-center justify-between mb-2 animate-fade-in">
+              <div className="flex items-center gap-4">
+                  <button 
+                    onClick={() => setSelectedClass(null)}
+                    className="flex items-center gap-2 text-slate-500 hover:text-indigo-600 font-medium transition-colors bg-white px-4 py-2 rounded-lg shadow-sm border border-slate-200 hover:shadow-md"
+                  >
+                      <ArrowLeft size={20} /> Kembali
+                  </button>
+                  <div className="flex flex-col">
+                      <h2 className="text-2xl font-bold text-slate-800">Detail Monitoring</h2>
+                      <span className="text-indigo-600 font-semibold text-lg">{selectedClass}</span>
+                  </div>
+              </div>
+              <button 
+                  onClick={exportCurrentClassReports}
+                  className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 hover:shadow-md transition-all flex items-center gap-2"
+              >
+                  <Download size={16} /> Ekspor Kelas Ini
+              </button>
+          </div>
+      )}
+
+      {/* ADMIN VIEW: Class Summary Grid (Show if no specific class selected) */}
+      {isAdmin && !selectedClass && (
+          <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 animate-fade-in">
+            <div className="flex justify-between items-center mb-6">
+                <h3 className="text-lg font-bold flex items-center gap-2">
+                    <ListFilter className="text-indigo-600" /> Monitoring Seluruh Kelas
+                </h3>
+                <div className="flex gap-2">
+                    <div className="text-xs text-green-700 bg-green-100 px-3 py-1 rounded-full flex items-center gap-1">
+                         <CheckCircle size={12} /> Sudah Lapor Hari Ini
+                    </div>
+                </div>
+            </div>
+            
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                {classSummary.map(cls => (
+                    <div 
+                        key={cls.name} 
+                        onClick={() => setSelectedClass(cls.name)}
+                        className={`p-4 rounded-lg border transition-all shadow-sm hover:shadow-md cursor-pointer relative group
+                            ${cls.submittedToday 
+                                ? 'bg-green-50 border-green-200 hover:bg-green-100' 
+                                : 'bg-slate-50 border-slate-200 hover:border-indigo-300 hover:bg-white'}`}
+                    >
+                        {/* Status Badge */}
+                        {cls.submittedToday && (
+                            <div className="absolute top-2 right-2 bg-green-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm">
+                                <CheckCircle size={10} /> SELESAI
+                            </div>
+                        )}
+
+                        <div className="flex justify-between items-start mb-2">
+                            <div className="font-bold text-lg text-slate-800 group-hover:text-indigo-600">{cls.name}</div>
+                        </div>
+                        <div className="text-xs text-slate-500 mb-2 truncate" title={cls.teacher}>
+                            {cls.teacher}
+                        </div>
+                        <div className="flex justify-between items-center mt-2">
+                             <div className="bg-white/50 px-2 py-1 rounded text-[10px] font-medium text-slate-600 border border-slate-100">
+                                {cls.count} Laporan
+                             </div>
+                             <div className="text-[10px] text-slate-400 flex items-center gap-1">
+                                {cls.lastDate === '-' ? 'Belum ada data' : cls.lastDate}
+                             </div>
+                        </div>
+                    </div>
+                ))}
+            </div>
+          </div>
+      )}
+
       {/* Stats Overview */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-            <div className="text-slate-500 text-sm mb-1">Total Laporan</div>
-            <div className="text-3xl font-bold text-slate-800">{records.length}</div>
+            <div className="text-slate-500 text-sm mb-1">
+                {isAdmin && !selectedClass ? 'Total Seluruh Laporan' : `Total Laporan (${selectedClass || 'Kelas Ini'})`}
+            </div>
+            <div className="text-3xl font-bold text-slate-800">{displayedRecords.length}</div>
         </div>
         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
              <div className="text-slate-500 text-sm mb-1">Kehadiran Rata-rata</div>
              <div className="text-3xl font-bold text-green-600">92%</div>
         </div>
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-             <div className="text-slate-500 text-sm mb-1">Subjek Dominan</div>
-             <div className="text-3xl font-bold text-indigo-600">Tilawati</div>
+        <div className={`p-6 rounded-xl shadow-sm border ${isAdmin ? 'bg-red-50 border-red-100' : 'bg-white border-slate-200'}`}>
+             <div className="text-slate-500 text-sm mb-1">
+                {isAdmin && !selectedClass ? 'Total Data (Semua Kelas)' : 'Status Sistem'}
+             </div>
+             <div className="text-3xl font-bold text-indigo-600">
+                {isAdmin && !selectedClass ? allRecords.length : 'Aktif'}
+             </div>
+             {isAdmin && <div className="text-xs text-red-600 font-medium mt-1">Mode Administrator</div>}
         </div>
       </div>
 
       {/* AI Summary Section */}
       <div className="bg-gradient-to-br from-indigo-900 to-purple-900 p-6 rounded-xl shadow-lg text-white">
         <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
-            <TrendingUp className="text-yellow-400"/> Ringkasan Evaluasi AI
+            <TrendingUp className="text-yellow-400"/> Ringkasan Evaluasi AI {isAdmin && !selectedClass ? '(Global)' : selectedClass ? `(${selectedClass})` : ''}
         </h3>
         <p className="text-indigo-200 text-sm mb-6">
-            Buat laporan eksekutif untuk sesi evaluasi (Konsultasi Sabtu) berdasarkan data yang terkumpul.
+            Buat laporan eksekutif untuk sesi evaluasi berdasarkan data yang terkumpul.
         </p>
         
         <div className="flex flex-wrap gap-3 mb-6">
@@ -390,12 +323,14 @@ export const Dashboard: React.FC<Props> = ({ records }) => {
 
       {/* Chart */}
       <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-        <h3 className="text-lg font-bold mb-6">Tren Keaktifan/Nilai & Kehadiran</h3>
+        <h3 className="text-lg font-bold mb-6">
+            Tren Keaktifan/Nilai & Kehadiran {isAdmin && !selectedClass ? '(50 Data Terakhir)' : `(${selectedClass || 'Kelas Ini'})`}
+        </h3>
         <div className="h-64 w-full">
              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData}>
+                <BarChart data={displayChartData}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                    <XAxis dataKey="date" />
+                    <XAxis dataKey={isAdmin && !selectedClass ? "label" : "date"} hide={isAdmin && !selectedClass} />
                     <YAxis />
                     <Tooltip />
                     <Legend />
@@ -407,15 +342,43 @@ export const Dashboard: React.FC<Props> = ({ records }) => {
       </div>
 
       {/* List & Export */}
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-        <div className="p-6 border-b border-slate-100 flex justify-between items-center">
-            <h3 className="font-bold text-lg">Riwayat Laporan</h3>
-            <button 
-                onClick={exportAllReportsToWord}
-                className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 hover:shadow-md transition-all flex items-center gap-2"
-            >
-                <Download size={16} /> Ekspor Semua (.doc)
-            </button>
+      <div className={`bg-white rounded-xl shadow-sm border overflow-hidden ${isAdmin ? 'border-red-200 ring-2 ring-red-50' : 'border-slate-200'}`}>
+        <div className="p-6 border-b border-slate-100 flex flex-wrap justify-between items-center gap-4">
+            <div className="flex items-center gap-2">
+                {isAdmin ? <ShieldCheck className="text-red-600" /> : <FileText className="text-indigo-600" />}
+                <h3 className="font-bold text-lg">
+                    {isAdmin && !selectedClass ? 'Database Seluruh Kelas' : `Riwayat Laporan ${selectedClass || ''}`}
+                </h3>
+            </div>
+            
+            <div className="flex gap-2">
+                {/* Mass Export Button - Only visible in Admin Global View */}
+                {isAdmin && !selectedClass && (
+                    <button 
+                        onClick={exportMassReports}
+                        disabled={isExporting}
+                        className={`${isExporting ? 'bg-slate-400' : 'bg-red-700 hover:bg-red-800'} text-white px-4 py-2 rounded-lg text-sm font-medium hover:shadow-md transition-all flex items-center gap-2`}
+                        title="Unduh semua laporan dari seluruh kelas dalam satu file"
+                    >
+                        {isExporting ? (
+                            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                        ) : (
+                            <Users size={16} /> 
+                        )}
+                        {isExporting ? 'MEMPROSES...' : 'EKSPOR MASSAL (SEMUA KELAS)'}
+                    </button>
+                )}
+
+                {/* Single Class Export - Visible for Teacher OR Admin Detail View */}
+                {(!isAdmin || selectedClass) && (
+                    <button 
+                        onClick={exportCurrentClassReports}
+                        className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 hover:shadow-md transition-all flex items-center gap-2"
+                    >
+                        <Download size={16} /> Ekspor Kelas Ini
+                    </button>
+                )}
+            </div>
         </div>
         <table className="w-full text-sm text-left">
             <thead className="bg-slate-50 text-slate-600 font-medium">
@@ -427,9 +390,9 @@ export const Dashboard: React.FC<Props> = ({ records }) => {
                 </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-                {records.length === 0 ? (
+                {displayedRecords.length === 0 ? (
                     <tr><td colSpan={4} className="p-8 text-center text-slate-400">Belum ada data laporan.</td></tr>
-                ) : records.map(r => (
+                ) : displayedRecords.map(r => (
                     <tr key={r.id} className="hover:bg-slate-50">
                         <td className="p-4">{r.date}</td>
                         <td className="p-4 font-medium">{r.classId}</td>
