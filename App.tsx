@@ -1,13 +1,15 @@
+
 import React, { useState, useEffect } from 'react';
 import { ClassData, DailyRecord, AttendanceStatus, SubjectType } from './types';
 import { DailyEntryForm } from './components/DailyEntryForm';
 import { Dashboard } from './components/Dashboard';
 import { VoiceConsultant } from './components/VoiceConsultant';
 import { Login } from './components/Login';
-import { LayoutDashboard, PenTool, Menu, LogOut, Database, ShieldCheck, ArrowLeft, Zap, Calendar, CheckCircle, AlertTriangle, CheckSquare, Square, Filter, ListChecks, X, Download, Settings } from 'lucide-react';
+import { LayoutDashboard, PenTool, Menu, LogOut, Database, ShieldCheck, ArrowLeft, Zap, Calendar, CheckCircle, AlertTriangle, CheckSquare, Square, Filter, ListChecks, X, Download, Settings, Sparkles, FileText } from 'lucide-react';
 import { saveRecordToDB, getRecordsFromDB } from './db';
 import { MOCK_CLASSES, getSubjectForDay } from './constants';
 import { generateReportHTML, downloadDoc } from './services/exportUtils';
+import { generateRandomStudentScores, generateClassReportAI } from './services/autoFillService';
 
 export default function App() {
   // Auth State
@@ -33,6 +35,7 @@ export default function App() {
   const [showBulkResultModal, setShowBulkResultModal] = useState(false);
   const [bulkGeneratedRecords, setBulkGeneratedRecords] = useState<DailyRecord[]>([]);
   const [autoDownload, setAutoDownload] = useState(true);
+  const [useAIForBulk, setUseAIForBulk] = useState(true);
 
   // Determine if user is ADMIN
   const isAdmin = currentUserClass?.id === 'ADMIN';
@@ -119,8 +122,9 @@ export default function App() {
           a.classId.localeCompare(b.classId, undefined, {numeric: true})
       );
       
+      const title = `Laporan_Massal_${bulkDate}_(${recordsToDownload.length}_Dokumen)`;
       const html = generateReportHTML(sorted, `Laporan Massal Tanggal ${bulkDate}`);
-      downloadDoc(html, `Laporan_AutoFill_${bulkDate}_(${sorted.length}_Kelas).doc`);
+      downloadDoc(html, `${title}.doc`);
   };
 
   const handleBulkGenerate = async () => {
@@ -131,48 +135,53 @@ export default function App() {
           return;
       }
 
-      if (!confirm(`Apakah Anda yakin ingin membuat laporan otomatis untuk ${classesToProcess.length} kelas terpilih pada tanggal ${bulkDate}? \n\nMapel: ${bulkSubject}\n\nData akan diisi dengan nilai default (Hadir & Baik).`)) {
+      if (!confirm(`Mulai pembuatan ${classesToProcess.length} laporan?\n\nTanggal: ${bulkDate}\nMapel: ${bulkSubject}\nMode AI: ${useAIForBulk ? 'Aktif' : 'Non-Aktif'}`)) {
           return;
       }
 
       setIsBulkProcessing(true);
       setShowBulkResultModal(false);
-      setBulkProgress({ current: 0, total: classesToProcess.length, currentClass: 'Memulai...' });
+      setBulkGeneratedRecords([]); // Reset previous results
+      setBulkProgress({ current: 0, total: classesToProcess.length, currentClass: 'Menginisialisasi...' });
       
-      const newRecords: DailyRecord[] = [];
+      const newRecordsBatch: DailyRecord[] = [];
 
       try {
           // Generate record for EACH selected class
           for (let i = 0; i < classesToProcess.length; i++) {
               const cls = classesToProcess[i];
               
-              // Update Progress
+              // UPDATE PROGRESS BAR
               setBulkProgress({ 
                   current: i + 1, 
                   total: classesToProcess.length, 
                   currentClass: cls.name 
               });
               
-              // Simulate delay to allow UI to update and show progress nicely
-              await new Promise(resolve => setTimeout(resolve, 80));
+              // 1. Generate Realistic Random Student Scores
+              const studentsScores = generateRandomStudentScores(cls.students, bulkSubject);
 
-              const studentsScores = cls.students.map(s => ({
-                  studentId: s.id,
-                  studentName: s.name,
-                  attendance: AttendanceStatus.PRESENT,
-                  activeInvolvement: 3, // Default Baik
-                  fluency: 3,
-                  tajwid: 3,
-                  adab: 4, // Default Sangat Baik
-                  jilid: 'Jilid 1',
-                  page: '',
-                  // Literasi Defaults
-                  literacyTotalQuestions: 10,
-                  literacyCorrect: 8,
-                  literacyWrong: 2,
-                  literacyScore: 80,
-                  notes: ''
-              }));
+              // 2. Generate Text Analysis (AI or Template)
+              // Small delay to allow UI render update
+              await new Promise(resolve => setTimeout(resolve, 50));
+              
+              let teacherAnalysis = '';
+              let recommendations = { specialAttention: '', methodImprovement: '', nextWeekPlan: '' };
+              
+              if (useAIForBulk) {
+                  const aiData = await generateClassReportAI(cls.name, cls.homeroomTeacher, bulkSubject, bulkDate, studentsScores);
+                  teacherAnalysis = aiData.teacherAnalysis;
+                  recommendations = aiData.recommendations;
+              } else {
+                  // Fallback static/simple template if AI is off
+                  const presentCount = studentsScores.filter(s => s.attendance === 'H').length;
+                  teacherAnalysis = `Kegiatan ${bulkSubject} hari ini berjalan kondusif. Kehadiran ${presentCount} dari ${cls.students.length} siswa.`;
+                  recommendations = {
+                      specialAttention: "Siswa yang terlambat.",
+                      methodImprovement: "Disiplin waktu.",
+                      nextWeekPlan: "Lanjut materi."
+                  };
+              }
 
               const record: DailyRecord = {
                   id: `${Date.now()}-${cls.id}-${Math.random().toString(36).substr(2, 9)}`,
@@ -181,22 +190,18 @@ export default function App() {
                   teacherName: cls.homeroomTeacher,
                   subject: bulkSubject,
                   studentScores: studentsScores,
-                  teacherAnalysis: 'Kegiatan berjalan lancar dan kondusif secara umum (Auto-generated).',
-                  recommendations: {
-                      specialAttention: 'Nihil',
-                      methodImprovement: 'Pertahankan suasana kelas',
-                      nextWeekPlan: 'Lanjut materi berikutnya'
-                  },
-                  aiAnalysis: 'Laporan dibuat secara otomatis oleh Administrator.'
+                  teacherAnalysis,
+                  recommendations,
+                  aiAnalysis: useAIForBulk ? 'Generated by Gemini' : 'Auto-template'
               };
 
               await saveRecordToDB(record);
-              newRecords.push(record);
+              newRecordsBatch.push(record);
           }
 
-          // Update State
-          setRecords(prev => [...newRecords, ...prev]);
-          setBulkGeneratedRecords(newRecords);
+          // Update Main State
+          setRecords(prev => [...newRecordsBatch, ...prev]);
+          setBulkGeneratedRecords(newRecordsBatch);
           
           // Finish Processing
           setTimeout(() => {
@@ -206,9 +211,9 @@ export default function App() {
 
               // AUTO DOWNLOAD TRIGGER
               if (autoDownload) {
-                  downloadBulkResults(newRecords);
+                  downloadBulkResults(newRecordsBatch);
               }
-          }, 500);
+          }, 800); // Slight delay to show 100%
 
       } catch (error) {
           console.error("Bulk generation error", error);
@@ -230,57 +235,93 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-50 flex relative">
-      {/* Loading / Processing Overlay */}
+      {/* Loading / Processing Overlay with Precise Progress */}
       {isBulkProcessing && (
-        <div className="fixed inset-0 bg-black/80 z-[60] flex flex-col items-center justify-center text-white backdrop-blur-sm animate-fade-in">
-            <div className="w-80 bg-white/10 rounded-full h-6 mb-6 border border-white/20 overflow-hidden relative">
+        <div className="fixed inset-0 bg-slate-900/90 z-[70] flex flex-col items-center justify-center text-white backdrop-blur-md animate-fade-in">
+            <div className="w-96 bg-slate-700 rounded-full h-8 mb-6 border border-slate-600 overflow-hidden relative shadow-2xl">
                 <div 
-                    className="bg-gradient-to-r from-yellow-400 to-orange-500 h-full transition-all duration-200 ease-out relative z-10"
+                    className="bg-gradient-to-r from-green-400 via-yellow-400 to-orange-500 h-full transition-all duration-300 ease-linear relative z-10"
                     style={{ width: `${(bulkProgress.current / bulkProgress.total) * 100}%` }}
                 ></div>
-                <div className="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-white/80 z-20">
+                <div className="absolute inset-0 flex items-center justify-center text-xs font-bold text-white drop-shadow-md z-20">
                     {Math.round((bulkProgress.current / bulkProgress.total) * 100)}%
                 </div>
             </div>
-            <h3 className="text-3xl font-bold mb-2 animate-pulse">Memproses Data...</h3>
-            <p className="text-indigo-200 font-mono text-lg mb-2">
-                Kelas: <span className="text-yellow-300 font-bold">{bulkProgress.currentClass}</span>
+            
+            <h3 className="text-3xl font-bold mb-2 animate-pulse tracking-tight">
+                Memproses Data...
+            </h3>
+            <p className="text-indigo-200 font-mono text-xl mb-4">
+                Kelas: <span className="text-yellow-300 font-bold border-b-2 border-yellow-300 pb-1">{bulkProgress.currentClass}</span>
             </p>
-            <p className="text-sm text-white/50">
-                {bulkProgress.current} dari {bulkProgress.total} laporan berhasil dibuat
-            </p>
+            
+            <div className="bg-slate-800/50 px-6 py-3 rounded-xl border border-slate-700 flex flex-col items-center gap-1">
+                <p className="text-sm text-slate-300">
+                    Dokumen <span className="text-white font-bold">{bulkProgress.current}</span> dari <span className="text-white font-bold">{bulkProgress.total}</span>
+                </p>
+                {useAIForBulk && (
+                     <div className="flex items-center gap-2 text-[10px] text-indigo-300 mt-1">
+                        <Sparkles size={10} className="animate-spin-slow text-yellow-400" /> 
+                        Menghasilkan narasi unik AI...
+                     </div>
+                )}
+            </div>
         </div>
       )}
 
-      {/* Result Modal */}
+      {/* Result Modal with List and Download */}
       {showBulkResultModal && (
-        <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden transform transition-all scale-100">
-                <div className="bg-green-600 p-6 text-white text-center">
+        <div className="fixed inset-0 bg-black/60 z-[60] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden transform transition-all scale-100 flex flex-col max-h-[90vh]">
+                <div className="bg-green-600 p-6 text-white text-center shrink-0">
                     <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-4 shadow-inner">
                         <CheckCircle size={32} className="text-white" />
                     </div>
-                    <h3 className="text-2xl font-bold">Selesai!</h3>
-                    <p className="text-green-100">{bulkGeneratedRecords.length} laporan telah dibuat.</p>
+                    <h3 className="text-2xl font-bold">Generasi Berhasil!</h3>
+                    <p className="text-green-100">{bulkGeneratedRecords.length} dokumen telah dibuat.</p>
                 </div>
-                <div className="p-6 text-center">
-                    <p className="text-slate-600 text-sm mb-6">
-                        Data telah disimpan ke database. 
-                        {autoDownload ? " File dokumen telah diunduh secara otomatis." : " Silakan unduh file dokumen di bawah ini."}
+                
+                <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+                     <h4 className="font-bold text-slate-700 text-sm flex items-center gap-2">
+                        <FileText size={16} className="text-indigo-600"/> Daftar Hasil
+                     </h4>
+                     <span className="text-xs text-slate-500">Tersimpan di Database</span>
+                </div>
+
+                <div className="overflow-y-auto flex-1 p-4 custom-scrollbar bg-slate-50">
+                    <ul className="space-y-2">
+                        {bulkGeneratedRecords.map((rec, idx) => (
+                            <li key={idx} className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm flex justify-between items-center text-sm">
+                                <div>
+                                    <span className="font-bold text-slate-800">{rec.classId}</span>
+                                    <span className="mx-2 text-slate-300">|</span>
+                                    <span className="text-slate-500 text-xs">{rec.teacherName}</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-[10px] bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">OK</span>
+                                </div>
+                            </li>
+                        ))}
+                    </ul>
+                </div>
+
+                <div className="p-6 border-t border-slate-100 bg-white shrink-0">
+                    <p className="text-slate-600 text-xs text-center mb-4">
+                        {autoDownload ? "File dokumen telah diunduh otomatis." : "Klik tombol di bawah untuk mengunduh dokumen."}
                     </p>
                     
                     <button 
                         onClick={() => downloadBulkResults(bulkGeneratedRecords)}
                         className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-xl flex items-center justify-center gap-2 mb-3 transition-all shadow-lg shadow-indigo-200 hover:scale-[1.02]"
                     >
-                        <Download size={20} /> Unduh Ulang (.doc)
+                        <Download size={20} /> Unduh Dokumen (.doc)
                     </button>
                     
                     <button 
                         onClick={() => setShowBulkResultModal(false)}
                         className="w-full bg-white border border-slate-200 text-slate-600 font-medium py-3 px-4 rounded-xl hover:bg-slate-50 transition-colors"
                     >
-                        Tutup
+                        Tutup & Kembali ke Dashboard
                     </button>
                 </div>
             </div>
@@ -389,12 +430,12 @@ export default function App() {
                                         <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-8">
                                             <div className="flex-1">
                                                 <h3 className="text-2xl font-bold flex items-center gap-2 mb-2">
-                                                    <Zap className="text-yellow-300" /> Auto-Fill Massal
+                                                    <Zap className="text-yellow-300" /> Auto-Fill Massal (Realistis)
                                                 </h3>
                                                 <p className="text-indigo-100 text-sm leading-relaxed mb-6 max-w-xl">
-                                                    Buat laporan otomatis untuk kelas yang dipilih dengan satu klik.
-                                                    Sistem akan mengisi nilai default (Hadir & Baik). 
-                                                    Gunakan fitur ini untuk rekap cepat jika kegiatan berjalan normal.
+                                                    Buat laporan otomatis untuk seluruh kelas. 
+                                                    Sistem akan <strong>mengacak nilai & absensi</strong> secara realistis (tidak flat).
+                                                    Gunakan opsi AI untuk membuat narasi guru yang unik per kelas.
                                                 </p>
 
                                                 {/* CLASS CHECKLIST */}
@@ -458,15 +499,32 @@ export default function App() {
                                                     </select>
                                                 </div>
 
-                                                <label className="flex items-center gap-2 cursor-pointer bg-indigo-900/40 p-2 rounded-lg border border-white/10 hover:bg-indigo-900/60 transition-colors">
-                                                    <input 
-                                                        type="checkbox"
-                                                        checked={autoDownload}
-                                                        onChange={(e) => setAutoDownload(e.target.checked)}
-                                                        className="w-4 h-4 text-yellow-400 rounded focus:ring-yellow-400"
-                                                    />
-                                                    <span className="text-xs font-medium text-indigo-100">Download Otomatis saat selesai</span>
-                                                </label>
+                                                <div className="space-y-2">
+                                                    <label className="flex items-center gap-2 cursor-pointer bg-indigo-900/40 p-2 rounded-lg border border-white/10 hover:bg-indigo-900/60 transition-colors">
+                                                        <input 
+                                                            type="checkbox"
+                                                            checked={useAIForBulk}
+                                                            onChange={(e) => setUseAIForBulk(e.target.checked)}
+                                                            className="w-4 h-4 text-yellow-400 rounded focus:ring-yellow-400"
+                                                        />
+                                                        <div className="flex flex-col">
+                                                            <span className="text-xs font-bold text-white flex items-center gap-1">
+                                                                <Sparkles size={10} className="text-yellow-400"/> Gunakan AI Narasi
+                                                            </span>
+                                                            <span className="text-[10px] text-indigo-200">Analisis & Saran unik (Lebih lambat)</span>
+                                                        </div>
+                                                    </label>
+
+                                                    <label className="flex items-center gap-2 cursor-pointer bg-indigo-900/40 p-2 rounded-lg border border-white/10 hover:bg-indigo-900/60 transition-colors">
+                                                        <input 
+                                                            type="checkbox"
+                                                            checked={autoDownload}
+                                                            onChange={(e) => setAutoDownload(e.target.checked)}
+                                                            className="w-4 h-4 text-yellow-400 rounded focus:ring-yellow-400"
+                                                        />
+                                                        <span className="text-xs font-medium text-indigo-100">Auto-Download Doc</span>
+                                                    </label>
+                                                </div>
 
                                                 <button 
                                                     onClick={handleBulkGenerate}
