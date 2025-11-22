@@ -1,8 +1,10 @@
+
 import React, { useState } from 'react';
 import { DailyRecord, SubjectType, StudentScore } from '../types';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { FileText, MessageSquare, Calendar, TrendingUp, BookOpen, CheckCircle, Download, PieChart } from 'lucide-react';
+import { FileText, MessageSquare, Calendar, TrendingUp, BookOpen, CheckCircle, Download } from 'lucide-react';
 import { generateComprehensiveReport, generateEvaluationSummary } from '../services/geminiService';
+import { CONSULTATION_OPTIONS } from '../constants';
 
 interface Props {
   records: DailyRecord[];
@@ -14,7 +16,7 @@ export const Dashboard: React.FC<Props> = ({ records }) => {
   const [isThinking, setIsThinking] = useState(false);
 
   // Summary State
-  const [summaryType, setSummaryType] = useState<'Harian' | 'Bulanan' | 'Triwulan'>('Harian');
+  const [summaryType, setSummaryType] = useState<'Harian' | 'Triwulan' | 'Bulanan'>('Harian');
   const [summaryResult, setSummaryResult] = useState('');
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
 
@@ -42,7 +44,7 @@ export const Dashboard: React.FC<Props> = ({ records }) => {
     setIsThinking(false);
   };
 
-  const handleGenerateSummary = async (type: 'Harian' | 'Bulanan' | 'Triwulan') => {
+  const handleGenerateSummary = async (type: 'Harian' | 'Triwulan' | 'Bulanan') => {
       setSummaryType(type);
       setIsGeneratingSummary(true);
       setSummaryResult('');
@@ -58,9 +60,9 @@ export const Dashboard: React.FC<Props> = ({ records }) => {
               filteredRecords = [records[0]]; // Fallback to latest
           }
       } else if (type === 'Triwulan') {
-          // Last 3 months (approx 90 days)
-          const lastQuarter = new Date(today.getTime() - 90 * 24 * 60 * 60 * 1000);
-          filteredRecords = records.filter(r => new Date(r.date) >= lastQuarter);
+          // Last 90 days
+          const last90Days = new Date(today.getTime() - 90 * 24 * 60 * 60 * 1000);
+          filteredRecords = records.filter(r => new Date(r.date) >= last90Days);
       } else if (type === 'Bulanan') {
           // Current Month
           filteredRecords = records.filter(r => {
@@ -82,6 +84,12 @@ export const Dashboard: React.FC<Props> = ({ records }) => {
       return "Kurang";
   };
 
+  // Helper to get label from Consultation Options
+  const getConsultationLabel = (key: 'kerapian' | 'atribut' | 'kesehatan' | 'respon', val: number) => {
+      const option = CONSULTATION_OPTIONS[key].find(o => o.value === val);
+      return option ? option.label : val.toString();
+  };
+
   const exportAllReportsToWord = () => {
     if (records.length === 0) {
         alert("Tidak ada data laporan untuk diekspor.");
@@ -91,6 +99,7 @@ export const Dashboard: React.FC<Props> = ({ records }) => {
     const content = records.map(record => {
         const isTilawati = record.subject === SubjectType.TILAWATI;
         const isLiterasi = record.subject === SubjectType.LITERASI;
+        const isKonsultasi = record.subject === SubjectType.KONSULTASI;
         
         let tableHeaders = '';
         let tableBody: (s: StudentScore) => string;
@@ -116,7 +125,18 @@ export const Dashboard: React.FC<Props> = ({ records }) => {
                 <td align="center">${s.literacyWrong || 0}</td>
                 <td align="center"><strong>${s.literacyScore || 0}</strong></td>
             `;
+        } else if (isKonsultasi) {
+            tableHeaders = `
+                <th style="background-color:#e0e0e0">Kerapian</th><th style="background-color:#e0e0e0">Atribut</th><th style="background-color:#e0e0e0">Kesehatan</th><th style="background-color:#e0e0e0">Respon</th>
+            `;
+            tableBody = (s: StudentScore) => `
+                <td align="center">${getConsultationLabel('kerapian', s.activeInvolvement)}</td>
+                <td align="center">${getConsultationLabel('atribut', s.fluency)}</td>
+                <td align="center">${getConsultationLabel('kesehatan', s.tajwid)}</td>
+                <td align="center">${getConsultationLabel('respon', s.adab)}</td>
+            `;
         } else {
+            // General
             tableHeaders = `
                 <th style="background-color:#e0e0e0">Aktif</th><th style="background-color:#e0e0e0">Lancar</th><th style="background-color:#e0e0e0">Tajwid</th><th style="background-color:#e0e0e0">Adab</th>
             `;
@@ -205,6 +225,7 @@ export const Dashboard: React.FC<Props> = ({ records }) => {
   const copyReportToClipboard = (record: DailyRecord) => {
     const isTilawati = record.subject === SubjectType.TILAWATI;
     const isLiterasi = record.subject === SubjectType.LITERASI;
+    const isKonsultasi = record.subject === SubjectType.KONSULTASI;
     
     let tableHeaders = '';
     let tableBody: (s: StudentScore) => string;
@@ -229,6 +250,16 @@ export const Dashboard: React.FC<Props> = ({ records }) => {
             <td>${s.literacyCorrect || 0}</td>
             <td>${s.literacyWrong || 0}</td>
             <td><strong>${s.literacyScore || 0}</strong></td>
+        `;
+    } else if (isKonsultasi) {
+        tableHeaders = `
+            <th>Kerapian</th><th>Atribut</th><th>Kesehatan</th><th>Respon</th>
+        `;
+        tableBody = (s: StudentScore) => `
+            <td>${getConsultationLabel('kerapian', s.activeInvolvement)}</td>
+            <td>${getConsultationLabel('atribut', s.fluency)}</td>
+            <td>${getConsultationLabel('kesehatan', s.tajwid)}</td>
+            <td>${getConsultationLabel('respon', s.adab)}</td>
         `;
     } else {
         tableHeaders = `
@@ -321,11 +352,11 @@ export const Dashboard: React.FC<Props> = ({ records }) => {
             <TrendingUp className="text-yellow-400"/> Ringkasan Evaluasi AI
         </h3>
         <p className="text-indigo-200 text-sm mb-6">
-            Buat laporan eksekutif dengan analisis otomatis dan Kesimpulan Akhir untuk evaluasi berkala.
+            Buat laporan eksekutif untuk sesi evaluasi (Konsultasi Sabtu) berdasarkan data yang terkumpul.
         </p>
         
         <div className="flex flex-wrap gap-3 mb-6">
-            {['Harian', 'Bulanan', 'Triwulan'].map((type) => (
+            {['Harian', 'Triwulan', 'Bulanan'].map((type) => (
                 <button
                     key={type}
                     onClick={() => handleGenerateSummary(type as any)}
@@ -336,7 +367,7 @@ export const Dashboard: React.FC<Props> = ({ records }) => {
                         : 'bg-indigo-800/50 text-indigo-100 hover:bg-indigo-800'
                     }`}
                 >
-                   {type === 'Harian' ? <CheckCircle size={16}/> : type === 'Bulanan' ? <Calendar size={16}/> : <PieChart size={16}/>}
+                   {type === 'Harian' ? <CheckCircle size={16}/> : type === 'Triwulan' ? <Calendar size={16}/> : <BookOpen size={16}/>}
                    Evaluasi {type}
                 </button>
             ))}
