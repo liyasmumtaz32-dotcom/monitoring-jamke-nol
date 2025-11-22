@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo } from 'react';
 import { DailyRecord, SubjectType, StudentScore } from '../types';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
@@ -181,36 +182,85 @@ export const Dashboard: React.FC<Props> = ({ records, allRecords, isAdmin = fals
 
   return (
     <div className="space-y-8">
-      {/* ADMIN: Navigation Header */}
+      {/* --- SECTION 1: MAIN ACTION HEADER (EXPORT CENTER) --- */}
+      
+      {/* SCENARIO A: ADMIN GLOBAL VIEW */}
+      {isAdmin && !selectedClass && (
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-xl shadow-sm border border-slate-200 animate-fade-in">
+            <div>
+                <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
+                    <ShieldCheck className="text-red-600" /> Dashboard Administrator
+                </h1>
+                <p className="text-slate-500 text-sm mt-1">
+                    Pantau status dan unduh laporan dari seluruh kelas.
+                </p>
+            </div>
+            <div className="flex gap-3">
+                 <button 
+                    onClick={exportMassReports}
+                    disabled={isExporting}
+                    className={`${isExporting ? 'bg-slate-400' : 'bg-red-600 hover:bg-red-700'} text-white px-6 py-3 rounded-xl font-bold shadow-lg hover:shadow-xl transition-all flex items-center gap-2 transform hover:-translate-y-0.5`}
+                >
+                    {isExporting ? (
+                        <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    ) : (
+                        <Download size={20} />
+                    )}
+                    {isExporting ? 'MEMPROSES...' : 'DOWNLOAD REKAP MASSAL (.DOC)'}
+                </button>
+            </div>
+        </div>
+      )}
+
+      {/* SCENARIO B: ADMIN DETAIL CLASS VIEW */}
       {isAdmin && selectedClass && (
-          <div className="flex items-center justify-between mb-2 animate-fade-in">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-xl shadow-sm border border-slate-200 animate-fade-in">
               <div className="flex items-center gap-4">
                   <button 
                     onClick={() => setSelectedClass(null)}
-                    className="flex items-center gap-2 text-slate-500 hover:text-indigo-600 font-medium transition-colors bg-white px-4 py-2 rounded-lg shadow-sm border border-slate-200 hover:shadow-md"
+                    className="flex items-center gap-2 text-slate-500 hover:text-indigo-600 font-medium transition-colors bg-slate-50 px-4 py-2 rounded-lg border border-slate-200 hover:shadow-md"
                   >
                       <ArrowLeft size={20} /> Kembali
                   </button>
                   <div className="flex flex-col">
-                      <h2 className="text-2xl font-bold text-slate-800">Detail Monitoring</h2>
-                      <span className="text-indigo-600 font-semibold text-lg">{selectedClass}</span>
+                      <h2 className="text-2xl font-bold text-slate-800">Detail Kelas {selectedClass}</h2>
+                      <span className="text-slate-500 text-sm">Lihat grafik dan riwayat laporan kelas ini.</span>
                   </div>
               </div>
               <button 
                   onClick={exportCurrentClassReports}
-                  className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 hover:shadow-md transition-all flex items-center gap-2"
+                  className="bg-indigo-600 text-white px-6 py-3 rounded-xl font-bold shadow-lg hover:bg-indigo-700 transition-all flex items-center gap-2"
               >
-                  <Download size={16} /> Ekspor Kelas Ini
+                  <Download size={20} /> DOWNLOAD LAPORAN KELAS INI
               </button>
           </div>
       )}
 
-      {/* ADMIN VIEW: Class Summary Grid (Show if no specific class selected) */}
+      {/* SCENARIO C: TEACHER VIEW */}
+      {!isAdmin && (
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+             <div>
+                <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
+                    <FileText className="text-indigo-600"/> Laporan Kelas {records.length > 0 ? records[0].classId : 'Saya'}
+                </h1>
+                <p className="text-slate-500 text-sm mt-1">Rekapitulasi data monitoring harian dan evaluasi.</p>
+             </div>
+             <button 
+                  onClick={exportCurrentClassReports}
+                  className="bg-green-600 text-white px-6 py-3 rounded-xl font-bold shadow-lg hover:bg-green-700 transition-all flex items-center gap-2"
+              >
+                  <Download size={20} /> DOWNLOAD LAPORAN SAYA (.DOC)
+              </button>
+          </div>
+      )}
+
+
+      {/* --- SECTION 2: ADMIN CLASS SUMMARY GRID (Only Global Admin) --- */}
       {isAdmin && !selectedClass && (
           <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 animate-fade-in">
             <div className="flex justify-between items-center mb-6">
                 <h3 className="text-lg font-bold flex items-center gap-2">
-                    <ListFilter className="text-indigo-600" /> Monitoring Seluruh Kelas
+                    <ListFilter className="text-indigo-600" /> Status Monitoring Harian
                 </h3>
                 <div className="flex gap-2">
                     <div className="text-xs text-green-700 bg-green-100 px-3 py-1 rounded-full flex items-center gap-1">
@@ -256,7 +306,7 @@ export const Dashboard: React.FC<Props> = ({ records, allRecords, isAdmin = fals
           </div>
       )}
 
-      {/* Stats Overview */}
+      {/* --- SECTION 3: STATS & AI --- */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
             <div className="text-slate-500 text-sm mb-1">
@@ -341,7 +391,7 @@ export const Dashboard: React.FC<Props> = ({ records, allRecords, isAdmin = fals
         </div>
       </div>
 
-      {/* List & Export */}
+      {/* --- SECTION 4: DATA TABLE --- */}
       <div className={`bg-white rounded-xl shadow-sm border overflow-hidden ${isAdmin ? 'border-red-200 ring-2 ring-red-50' : 'border-slate-200'}`}>
         <div className="p-6 border-b border-slate-100 flex flex-wrap justify-between items-center gap-4">
             <div className="flex items-center gap-2">
@@ -350,35 +400,7 @@ export const Dashboard: React.FC<Props> = ({ records, allRecords, isAdmin = fals
                     {isAdmin && !selectedClass ? 'Database Seluruh Kelas' : `Riwayat Laporan ${selectedClass || ''}`}
                 </h3>
             </div>
-            
-            <div className="flex gap-2">
-                {/* Mass Export Button - Only visible in Admin Global View */}
-                {isAdmin && !selectedClass && (
-                    <button 
-                        onClick={exportMassReports}
-                        disabled={isExporting}
-                        className={`${isExporting ? 'bg-slate-400' : 'bg-red-700 hover:bg-red-800'} text-white px-4 py-2 rounded-lg text-sm font-medium hover:shadow-md transition-all flex items-center gap-2`}
-                        title="Unduh semua laporan dari seluruh kelas dalam satu file"
-                    >
-                        {isExporting ? (
-                            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                        ) : (
-                            <Users size={16} /> 
-                        )}
-                        {isExporting ? 'MEMPROSES...' : 'EKSPOR MASSAL (SEMUA KELAS)'}
-                    </button>
-                )}
-
-                {/* Single Class Export - Visible for Teacher OR Admin Detail View */}
-                {(!isAdmin || selectedClass) && (
-                    <button 
-                        onClick={exportCurrentClassReports}
-                        className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 hover:shadow-md transition-all flex items-center gap-2"
-                    >
-                        <Download size={16} /> Ekspor Kelas Ini
-                    </button>
-                )}
-            </div>
+            {/* Secondary buttons moved to top, only keeping individual "Word" button in table rows */}
         </div>
         <table className="w-full text-sm text-left">
             <thead className="bg-slate-50 text-slate-600 font-medium">
@@ -404,7 +426,7 @@ export const Dashboard: React.FC<Props> = ({ records, allRecords, isAdmin = fals
                                 onClick={() => copyReportToClipboard(r)}
                                 className="text-indigo-600 hover:text-indigo-800 font-medium inline-flex items-center gap-1"
                             >
-                                <FileText size={16} /> Word
+                                <FileText size={16} /> Unduh Word
                             </button>
                         </td>
                     </tr>
