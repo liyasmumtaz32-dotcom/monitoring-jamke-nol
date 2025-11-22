@@ -82,7 +82,7 @@ export const generateRandomStudentScores = (students: { id: string; name: string
              }
         } else {
             if(isPresent) {
-                 const notes = ["Aktif mengikuti kegiatan.", "Cukup kondusif.", "Perlu ditingkatkan kefokusannya.", "Sangat baik."];
+                 const notes = ["Aktif mengikuti kegiatan.", "Cukup kondusif.", "Perlu ditingkatkan kefokusannya.", "Sangat baik.", "Tertib dan rapi.", "Sedikit kurang fokus."];
                  baseScore.notes = notes[Math.floor(Math.random() * notes.length)];
             }
         }
@@ -110,13 +110,14 @@ export const generateClassReportTemplate = (
     const analysisTemplates = [
         `Kegiatan ${subject} berjalan dengan ${quality}. Tingkat kehadiran siswa mencapai ${Math.round(((presentCount + lateCount)/scores.length)*100)}%.`,
         `Alhamdulillah, pelaksanaan ${subject} hari ini lancar. Siswa mengikuti arahan dengan baik.`,
-        `Secara umum kegiatan ${subject} berlangsung tertib. Perlu perhatian lebih pada siswa yang datang terlambat.`
+        `Secara umum kegiatan ${subject} berlangsung tertib. Perlu perhatian lebih pada siswa yang datang terlambat (${lateCount} siswa).`,
+        `Pembelajaran ${subject} hari ini cukup efektif. Sebagian besar siswa aktif berpartisipasi.`
     ];
 
     return {
         teacherAnalysis: analysisTemplates[Math.floor(Math.random() * analysisTemplates.length)],
         recommendations: {
-            specialAttention: lateCount > 0 ? `${lateCount} siswa terlambat perlu pembinaan kedisiplinan.` : "Nihil.",
+            specialAttention: lateCount > 0 ? `${lateCount} siswa terlambat perlu pembinaan.` : "Nihil.",
             methodImprovement: "Mempertahankan konsistensi kegiatan.",
             nextWeekPlan: "Melanjutkan pembiasaan rutin sesuai jadwal."
         }
