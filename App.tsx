@@ -152,18 +152,18 @@ export default function App() {
               const cls = classesToProcess[i];
               
               // UPDATE PROGRESS BAR
-              setBulkProgress({ 
+              setBulkProgress(prev => ({ 
+                  ...prev,
                   current: i + 1, 
-                  total: classesToProcess.length, 
                   currentClass: cls.name 
-              });
+              }));
               
               // 1. Generate Realistic Random Student Scores
               const studentsScores = generateRandomStudentScores(cls.students, bulkSubject);
 
               // 2. Generate Text Analysis (AI or Template)
               // Small delay to allow UI render update
-              await new Promise(resolve => setTimeout(resolve, 50));
+              await new Promise(resolve => setTimeout(resolve, 10));
               
               let teacherAnalysis = '';
               let recommendations = { specialAttention: '', methodImprovement: '', nextWeekPlan: '' };
@@ -199,21 +199,27 @@ export default function App() {
               newRecordsBatch.push(record);
           }
 
-          // Update Main State
-          setRecords(prev => [...newRecordsBatch, ...prev]);
+          // Update Main State with ALL new records
+          // Note: Using spread with previous records to ensure Dashboard sees new data
+          setRecords(prev => {
+              const updated = [...newRecordsBatch, ...prev];
+              // Sort again to be safe
+              return updated.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+          });
+          
           setBulkGeneratedRecords(newRecordsBatch);
           
           // Finish Processing
+          // Trigger auto download synchronously if possible, or right before hiding loading screen
+          if (autoDownload) {
+             downloadBulkResults(newRecordsBatch);
+          }
+
           setTimeout(() => {
               setIsBulkProcessing(false);
               setActiveTab('dashboard');
               setShowBulkResultModal(true);
-
-              // AUTO DOWNLOAD TRIGGER
-              if (autoDownload) {
-                  downloadBulkResults(newRecordsBatch);
-              }
-          }, 800); // Slight delay to show 100%
+          }, 1000); // Show 100% for a second
 
       } catch (error) {
           console.error("Bulk generation error", error);
