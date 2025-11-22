@@ -62,7 +62,7 @@ export const generateComprehensiveReport = async (records: DailyRecord[], query:
     }
 }
 
-export const generateEvaluationSummary = async (records: DailyRecord[], periodType: 'Harian' | 'Mingguan' | 'Bulanan') => {
+export const generateEvaluationSummary = async (records: DailyRecord[], periodType: 'Harian' | 'Bulanan' | 'Triwulan') => {
     if (records.length === 0) return "Tidak ada data laporan untuk periode ini.";
 
     // Pre-process data to save tokens and focus on key metrics
@@ -84,19 +84,20 @@ export const generateEvaluationSummary = async (records: DailyRecord[], periodTy
     }).join('\n');
 
     const prompt = `
-        Buatkan Ringkasan Evaluasi ${periodType} untuk sesi rapat guru/wali kelas.
+        Buatkan Laporan Evaluasi ${periodType} (3 Bulan) untuk sesi rapat evaluasi sekolah.
         
-        Data Laporan:
+        Data Laporan Historis:
         ${dataSummary}
 
         Instruksi Output (Format Markdown):
-        1. **Tren Kehadiran & Kedisiplinan**: Analisis grafik kehadiran dan keterlambatan.
-        2. **Capaian Pembelajaran (Tilawati/Literasi)**: Apakah ada peningkatan jilid/halaman atau nilai literasi? Apakah target tercapai?
-        3. **Isu Krusial**: Sebutkan nama siswa yang muncul berulang kali sebagai "Perlu Perhatian" dan masalah spesifiknya.
-        4. **Evaluasi Kinerja Guru**: Berdasarkan "Rencana Tindak Lanjut", seberapa efektif strategi yang sudah dijalankan?
-        5. **Rekomendasi Strategis**: Saran konkret untuk ${periodType === 'Harian' ? 'besok' : periodType === 'Mingguan' ? 'minggu depan' : 'bulan depan'}.
+        1. **Tren Kehadiran & Kedisiplinan**: Analisis grafik kehadiran dan keterlambatan selama 3 bulan. Apakah membaik atau memburuk?
+        2. **Capaian Pembelajaran (Tilawati/Literasi)**: Bagaimana progres rata-rata kelas dalam satu triwulan ini?
+        3. **Isu Krusial & Siswa Beresiko**: Identifikasi nama siswa yang konsisten bermasalah selama periode ini.
+        4. **Evaluasi Efektivitas Guru**: Apakah strategi yang diterapkan guru (berdasarkan catatan) berhasil mengubah keadaan?
+        5. **Rekomendasi Jangka Panjang**: Saran strategis untuk triwulan berikutnya.
+        6. **KESIMPULAN AKHIR OTOMATIS**: Buatlah satu paragraf kesimpulan final yang tegas. Tentukan apakah kinerja kelas dalam periode ini: "SANGAT BAIK", "CUKUP", atau "PERLU PERHATIAN KHUSUS", beserta alasannya. Ini akan menjadi inti laporan.
 
-        Gunakan nada profesional, analitis, dan solutif.
+        Gunakan nada profesional, analitis, objektif, dan solutif.
     `;
 
     try {
